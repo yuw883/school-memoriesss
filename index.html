@@ -98,9 +98,9 @@ textarea::placeholder{color:#c9a5b1}
 <div class="tabs" role="tablist"><button class="tab" role="tab" data-cat="hs" aria-selected="true">高中 <span id="n-hs">0</span></button><button class="tab" role="tab" data-cat="jh" aria-selected="false">初中 <span id="n-jh">0</span></button></div>
 <label class="btn" id="upl">＋ 上傳照片到「<span id="upn">高中</span>」<input id="file" type="file" accept="image/*" multiple hidden></label>
 <div class="small" style="font-size:12px;margin-top:8px">所有照片公開可見・上傳者匿名</div>
+<div id="st" class="small" style="font-size:12px;margin-top:8px;letter-spacing:.05em" hidden></div>
 <div class="frame"><div class="grid" id="grid"></div></div>
 <div class="pager"><button class="chip" id="prev">上一頁</button><span class="small" id="pg"></span><button class="chip" id="next">下一頁</button></div>
-<div id="local" hidden>目前為本機預覽模式，內容只會保存在這台裝置。</div>
 </div></div>
 </section>
 
@@ -108,7 +108,7 @@ textarea::placeholder{color:#c9a5b1}
 <div class="nav"><button class="chip" data-go="home">← 首頁</button><button class="chip" data-count>畢業倒數</button></div>
 <div class="stage"><div class="hero" role="img" aria-label="Message board 留言板"></div>
 <div class="body">
-<div class="small" style="font-size:13px">寫下想說的話，全部匿名顯示</div>
+<div id="st2" class="small" style="font-size:12px" hidden></div><div class="small" style="font-size:13px">寫下想說的話，全部匿名顯示</div>
 <div class="composer"><div class="paper"><textarea id="txt" maxlength="120" placeholder="想對大家說什麼呢⋯⋯"></textarea><div class="cnt"><span id="cn">0</span>/120</div></div></div>
 <button class="btn" id="send">貼到留言板</button>
 <div class="wall" id="wall"></div>
@@ -126,24 +126,30 @@ textarea::placeholder{color:#c9a5b1}
 <div id="toast" hidden></div>
 
 <script>
+/* ▼▼ 只需要改這裡：貼上你在 Firebase 拿到的設定 ▼▼ */
+const firebaseConfig={apiKey:"AIzaSyALemCCqp17nQQiE91vJc02pM8HhzMwYaU",authDomain:"school-memories-ff7e6.firebaseapp.com",projectId:"school-memories-ff7e6",appId:"1:201061238137:web:0e9b9569590018fba6dba8"};
+/* ▲▲ */
+let ME='',fdb=null,F=null;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function h53(s){let a=0xdeadbeef,b=0x41c6ce57;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677)}a=Math.imul(a^a>>>16,2246822507)^Math.imul(b^b>>>13,3266489909);b=Math.imul(b^b>>>16,2246822507)^Math.imul(a^a>>>13,3266489909);return(4294967296*(2097151&b)+(a>>>0)).toString(36)}
-let tok;try{tok=localStorage.getItem('tw_tok');if(!tok){tok=Math.random().toString(36).slice(2)+Date.now().toString(36)+Math.random().toString(36).slice(2);localStorage.setItem('tw_tok',tok)}}catch(e){tok='t'+Math.random()}
-const ME=h53('tw'+tok);
 function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toast.k);toast.k=setTimeout(()=>t.hidden=true,2400)}
-/* storage: shared db when available, else this device only */
-const data={photos:[],notes:[]};let db=null;
-const lsGet=c=>{try{return JSON.parse(localStorage.getItem('tw_'+c)||'[]')}catch(e){return[]}};
-const lsSet=(c,a)=>{try{localStorage.setItem('tw_'+c,JSON.stringify(a))}catch(e){toast('儲存空間已滿')}};
+/* 共用資料庫：Firebase（所有同學看到同一份內容） */
+const data={photos:[],notes:[]};
 const paint=c=>c==='photos'?renderPhotos():renderNotes();
+const need=()=>{if(!F||!ME){toast('還沒連上資料庫，請稍等幾秒再試');throw new Error('offline')}};
 const store={
-async add(c,o){if(db)await db.collection(c).add(o);else{o.id='l'+Date.now()+Math.random().toString(36).slice(2,6);data[c].push(o);lsSet(c,data[c]);paint(c)}},
-async upd(c,id,p){if(db)await db.doc(c+'/'+id).update(p);else{Object.assign(data[c].find(v=>v.id===id),p);lsSet(c,data[c]);paint(c)}},
-async del(c,id){if(db)await db.doc(c+'/'+id).delete();else{data[c]=data[c].filter(v=>v.id!==id);lsSet(c,data[c]);paint(c)}}};
-(async()=>{try{db=window.claude&&await claude.use('db')}catch(e){db=null}
-if(db){['photos','notes'].forEach(c=>db.collection(c).onSnapshot(s=>{data[c]=s.docs.map(d=>({...d.data(),id:d.id}));paint(c)},()=>{}))}
-else{data.photos=lsGet('photos');data.notes=lsGet('notes');renderPhotos();renderNotes();$('#local').hidden=false}})();
+async add(c,o){need();await F.addDoc(F.collection(fdb,c),{...o,h:ME})},
+async upd(c,id,p){need();await F.updateDoc(F.doc(fdb,c,id),p)},
+async del(c,id){need();await F.deleteDoc(F.doc(fdb,c,id))}};
+const say=m=>{for(const id of['#st','#st2']){const s=$(id);s.textContent=m;s.hidden=!m}};
+(async()=>{try{
+const V='https://www.gstatic.com/firebasejs/10.12.2/';
+const[A,Au,Fs]=await Promise.all([import(V+'firebase-app.js'),import(V+'firebase-auth.js'),import(V+'firebase-firestore.js')]);
+const app=A.initializeApp(firebaseConfig);fdb=Fs.getFirestore(app);F=Fs;
+ME=(await Au.signInAnonymously(Au.getAuth(app))).user.uid;
+['photos','notes'].forEach(c=>F.onSnapshot(F.collection(fdb,c),s=>{data[c]=s.docs.map(d=>({...d.data(),id:d.id}));paint(c)},e=>say('讀取失敗（'+(e.code||e.message)+'）：請檢查 Firestore 規則')));
+say('')}catch(e){console.error(e);say('連線失敗（'+(e.code||e.message)+'）：請檢查 Firebase 設定')}})();
 /* navigation */
 function show(v){['home','gallery','board'].forEach(x=>$('#'+x).hidden=x!==v);document.body.className=v==='home'?'':'inner';scrollTo(0,0);if(v!=='home')openCount();renderPhotos();renderNotes()}
 function openCount(){const t=new Date(2027,4,18),n=new Date(),d=Math.ceil((t-new Date(n.getFullYear(),n.getMonth(),n.getDate()))/864e5);
