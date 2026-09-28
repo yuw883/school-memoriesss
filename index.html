@@ -123,13 +123,15 @@ textarea::placeholder{color:#c9a5b1}
 <div class="small" style="font-size:12px;margin:6px 0 10px">畢業日：2027年5月18日</div>
 <button class="btn" id="cx">好，繼續</button></div></div>
 <div id="lb" hidden><img alt="放大的照片"></div>
+<button class="chip" id="adm" hidden style="position:fixed;left:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:15">管理員登入</button>
 <div id="toast" hidden></div>
 
 <script>
 /* ▼▼ 只需要改這裡：貼上你在 Firebase 拿到的設定 ▼▼ */
 const firebaseConfig={apiKey:"AIzaSyALemCCqp17nQQiE91vJc02pM8HhzMwYaU",authDomain:"school-memories-ff7e6.firebaseapp.com",projectId:"school-memories-ff7e6",appId:"1:201061238137:web:0e9b9569590018fba6dba8"};
 /* ▲▲ */
-let ME='',fdb=null,F=null;
+let ME='',fdb=null,F=null,AU=null,AUTH=null,ADMIN=false;
+function setUser(){const u=AUTH.currentUser;ME=u.uid;ADMIN=!!(u.email&&!u.isAnonymous);$('#adm').textContent=ADMIN?'管理員模式（點此登出）':'管理員登入';renderPhotos();renderNotes()}
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function h53(s){let a=0xdeadbeef,b=0x41c6ce57;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677)}a=Math.imul(a^a>>>16,2246822507)^Math.imul(b^b>>>13,3266489909);b=Math.imul(b^b>>>16,2246822507)^Math.imul(a^a>>>13,3266489909);return(4294967296*(2097151&b)+(a>>>0)).toString(36)}
@@ -147,7 +149,9 @@ const say=m=>{for(const id of['#st','#st2']){const s=$(id);s.textContent=m;s.hid
 const V='https://www.gstatic.com/firebasejs/10.12.2/';
 const[A,Au,Fs]=await Promise.all([import(V+'firebase-app.js'),import(V+'firebase-auth.js'),import(V+'firebase-firestore.js')]);
 const app=A.initializeApp(firebaseConfig);fdb=Fs.getFirestore(app);F=Fs;
-ME=(await Au.signInAnonymously(Au.getAuth(app))).user.uid;
+AU=Au;AUTH=Au.getAuth(app);await new Promise(r=>{const u=AU.onAuthStateChanged(AUTH,()=>{u();r()})});
+if(!AUTH.currentUser)await AU.signInAnonymously(AUTH);
+setUser();
 ['photos','notes'].forEach(c=>F.onSnapshot(F.collection(fdb,c),s=>{data[c]=s.docs.map(d=>({...d.data(),id:d.id}));paint(c)},e=>say('讀取失敗（'+(e.code||e.message)+'）：請檢查 Firestore 規則')));
 say('')}catch(e){console.error(e);say('連線失敗（'+(e.code||e.message)+'）：請檢查 Firebase 設定')}})();
 /* navigation */
@@ -167,8 +171,9 @@ else store.upd(c,id,{hidden:act==='hide'}).then(()=>toast(act==='hide'?'已撤�
 let cat='hs',page=0;const PS=()=>matchMedia('(min-width:700px)').matches?6:4;
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{cat=t.dataset.cat;page=0;document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===t));$('#upn').textContent=cat==='hs'?'高中':'初中';renderPhotos()});
 $('#prev').onclick=()=>{page--;renderPhotos()};$('#next').onclick=()=>{page++;renderPhotos()};addEventListener('resize',()=>renderPhotos());
-const ctl=(c,p)=>p.h===ME?`<div class="ctl">${p.hidden?`<button data-act="show" data-c="${c}" data-id="${p.id}">重新發佈</button>`:`<button data-act="hide" data-c="${c}" data-id="${p.id}">撤回</button>`}<button data-act="del" data-c="${c}" data-id="${p.id}">刪除</button></div>`:'';
-function renderPhotos(){const all=data.photos.filter(p=>!p.hidden||p.h===ME);
+const admd=(c,p)=>`<div class="ctl"><button data-act="del" data-c="${c}" data-id="${p.id}">刪除</button></div>`;
+const ctl=(c,p)=>p.h===ME?`<div class="ctl">${p.hidden?`<button data-act="show" data-c="${c}" data-id="${p.id}">重新發佈</button>`:`<button data-act="hide" data-c="${c}" data-id="${p.id}">撤回</button>`}<button data-act="del" data-c="${c}" data-id="${p.id}">刪除</button></div>`:ADMIN?admd(c,p):'';
+function renderPhotos(){const all=data.photos.filter(p=>!p.hidden||p.h===ME||ADMIN);
 $('#n-hs').textContent=all.filter(p=>p.cat==='hs').length;$('#n-jh').textContent=all.filter(p=>p.cat==='jh').length;
 const list=all.filter(p=>p.cat===cat).sort((a,b)=>b.t-a.t),ps=PS(),pages=Math.max(1,Math.ceil(list.length/ps));
 page=Math.min(Math.max(page,0),pages-1);const g=$('#grid');g.style.setProperty('--c',ps===6?3:2);
@@ -182,8 +187,10 @@ if(n)toast(`已上傳 ${n} 張到「${cat==='hs'?'高中':'初中'}」`)};
 $('#txt').oninput=e=>$('#cn').textContent=e.target.value.length;
 $('#send').onclick=async()=>{const v=$('#txt').value.trim();if(!v)return toast('先寫點什麼吧');
 try{await store.add('notes',{text:v,t:Date.now(),h:ME,hidden:false});$('#txt').value='';$('#cn').textContent=0;toast('已貼上留言板')}catch(e){toast('留言失敗，請再試一次')}};
-function renderNotes(){const l=data.notes.filter(n=>!n.hidden||n.h===ME).sort((a,b)=>b.t-a.t);
-$('#wall').innerHTML=l.length?l.map(n=>`<div class="note ${n.hidden?'off':''}"><div class="paper"><p>${esc(n.text)}</p><small>匿名同學・${new Date(n.t).toLocaleDateString('zh-TW')}</small></div>${n.h===ME?`<div class="ncl">${n.hidden?`<button data-act="show" data-c="notes" data-id="${n.id}">重新發佈</button>`:`<button data-act="hide" data-c="notes" data-id="${n.id}">撤回</button>`}<button data-act="del" data-c="notes" data-id="${n.id}">刪除</button></div>`:''}</div>`).join(''):'<p class="small" style="grid-column:1/-1;font-size:13px">還沒有留言，寫下第一張吧</p>'}
+function renderNotes(){const l=data.notes.filter(n=>!n.hidden||n.h===ME||ADMIN).sort((a,b)=>b.t-a.t);
+$('#wall').innerHTML=l.length?l.map(n=>`<div class="note ${n.hidden?'off':''}"><div class="paper"><p>${esc(n.text)}</p><small>匿名同學・${new Date(n.t).toLocaleDateString('zh-TW')}</small></div>${n.h===ME?`<div class="ncl">${n.hidden?`<button data-act="show" data-c="notes" data-id="${n.id}">重新發佈</button>`:`<button data-act="hide" data-c="notes" data-id="${n.id}">撤回</button>`}<button data-act="del" data-c="notes" data-id="${n.id}">刪除</button></div>`:ADMIN?`<div class="ncl"><button data-act="del" data-c="notes" data-id="${n.id}">刪除</button></div>`:''}</div>`).join(''):'<p class="small" style="grid-column:1/-1;font-size:13px">還沒有留言，寫下第一張吧</p>'}
+$('#adm').onclick=async()=>{if(!AU)return toast('還沒連上，請稍等');try{if(ADMIN){await AU.signOut(AUTH);await AU.signInAnonymously(AUTH)}else await AU.signInWithPopup(AUTH,new AU.GoogleAuthProvider());setUser()}catch(e){toast('登入失敗：'+(e.code||e.message))}};
+if(location.hash==='#admin')$('#adm').hidden=false;
 renderPhotos();renderNotes();
 </script>
 </body>
