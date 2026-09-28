@@ -72,6 +72,11 @@ textarea::placeholder{color:#c9a5b1}
 #zone,#z1,#z2{--edge:#e8eefa}#z1 .hero{--hero:var(--pz1)}#z2 .hero{--hero:var(--pz2)}
 .ph.vid::after{content:"▶";position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:30px;text-shadow:0 1px 8px rgba(0,0,0,.55);pointer-events:none}
 #lb video{max-width:100%;max-height:92dvh;border-radius:10px;background:#000}
+#ap{position:fixed;inset:0;z-index:25;background:#fff8fa;overflow:auto;padding:calc(14px + env(safe-area-inset-top,0px)) 12px 40px}
+#ap .row{display:flex;gap:10px;align-items:center;background:#fff;border:1.5px solid var(--pk2);border-radius:14px;padding:8px;margin:8px 0}
+#ap .th{width:64px;height:64px;border-radius:8px;object-fit:cover;flex:none;background:#f7e9ee;display:grid;place-items:center;font-size:12px;color:var(--pk)}
+#ap .meta{flex:1;min-width:0;font-size:13px;line-height:1.55;word-break:break-word}
+#ap .who{cursor:pointer;color:var(--pk);text-decoration:underline}
 </style>
 </head>
 <body>
@@ -156,6 +161,8 @@ textarea::placeholder{color:#c9a5b1}
 <button class="btn" id="cx">好，繼續</button></div></div>
 <div id="lb" hidden><img alt="放大的照片"><video controls playsinline hidden></video></div>
 <button class="chip" id="adm" hidden style="position:fixed;left:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:15">管理員登入</button>
+<button class="chip" id="admp" hidden style="position:fixed;left:12px;bottom:calc(58px + env(safe-area-inset-bottom,0px));z-index:15">管理後台</button>
+<div id="ap" hidden><div style="max-width:820px;margin:auto"><div style="display:flex;gap:8px;align-items:center;justify-content:space-between"><b class="small" style="font-size:18px">管理後台</b><span><button class="chip" id="apall">看全部</button> <button class="chip" id="apx">關閉</button></span></div><div class="small" id="apc" style="font-size:12px;margin:6px 0"></div><div class="small" style="font-size:11px;letter-spacing:.05em;margin-bottom:6px">「裝置 #代碼」是每支手機或瀏覽器的匿名代號，點代碼可以只看同一個裝置發的內容。</div><div id="apl"></div></div></div>
 <div id="toast" hidden></div>
 
 <script>
@@ -166,13 +173,14 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toast.k);toast.k=setTimeout(()=>t.hidden=true,2400)}
 let ME='',fdb=null,F=null,AU=null,AUTH=null,ADMIN=false;
-function setUser(){const u=AUTH.currentUser;ME=u.uid;ADMIN=!!(u.email&&!u.isAnonymous);$('#adm').textContent=ADMIN?'管理員模式（點此登出）':'管理員登入';renderPhotos();renderNotes()}
+function setUser(){const u=AUTH.currentUser;ME=u.uid;ADMIN=!!(u.email&&!u.isAnonymous);$('#adm').textContent=ADMIN?'管理員模式（點此登出）':'管理員登入';$('#admp').hidden=!ADMIN;if(!ADMIN)$('#ap').hidden=true;
+renderPhotos();renderNotes()}
 /* 共用資料庫：Firebase（所有同學看到同一份內容） */
 const data={photos:[],notes:[]};
-const paint=c=>c==='photos'?renderPhotos():renderNotes();
+const paint=c=>{c==='photos'?renderPhotos():renderNotes();renderAdmin()};
 const need=()=>{if(!F||!ME){toast('還沒連上資料庫，請稍等幾秒再試');throw new Error('offline')}};
 const store={
-async add(c,o){need();await F.addDoc(F.collection(fdb,c),{...o,h:ME})},
+async add(c,o){need();return(await F.addDoc(F.collection(fdb,c),{...o,h:ME})).id},
 async upd(c,id,p){need();await F.updateDoc(F.doc(fdb,c,id),p)},
 async del(c,id){need();await F.deleteDoc(F.doc(fdb,c,id))}};
 const say=m=>{for(const id of['#st','#st2']){const s=$(id);s.textContent=m;s.hidden=!m}};
@@ -200,6 +208,7 @@ v.src=vcache[id];v.play().catch(()=>{})}
 document.addEventListener('click',e=>{
 const g=e.target.closest('[data-go]');if(g)return show(g.dataset.go);
 if(e.target.closest('[data-count]'))return openCount();
+const w=e.target.closest('[data-who]');if(w){apf=w.dataset.who;return renderAdmin()}
 const pn=e.target.closest('[data-prev],[data-next]');if(pn){const k=pn.dataset.prev||pn.dataset.next;V[k].page+=pn.dataset.prev?-1:1;return renderPhotos()}
 if(e.target.id==='count'||e.target.id==='cx')$('#count').hidden=true;
 if(e.target.id==='lb')closeLb();
@@ -231,7 +240,7 @@ const done=x=>{ok(x);URL.revokeObjectURL(u)};
 v.onloadeddata=()=>{v.currentTime=Math.min(.3,(v.duration||1)/2)};
 v.onseeked=()=>{try{const s=Math.min(1,640/Math.max(v.videoWidth,v.videoHeight)),c=document.createElement('canvas');c.width=v.videoWidth*s;c.height=v.videoHeight*s;c.getContext('2d').drawImage(v,0,0,c.width,c.height);done(c.toDataURL('image/jpeg',.7))}catch(e){done(blank())}};
 v.onerror=()=>done(blank());v.src=u;setTimeout(()=>done(blank()),6000)});
-async function upVideo(f,cat){if(f.size>20*1048576){toast('影片太大（上限 20MB），請剪短一點再上傳');return false}
+async function upVideo(f,cat){if(f.size>55*1048576){toast('影片太大（上限 55MB），請剪短一點再上傳');return false}
 need();const poster=await posterOf(f),ref=F.doc(F.collection(fdb,'photos')),id=ref.id,CH=512*1024,n=Math.ceil(f.size/CH);
 for(let s=0;s<n;s+=4){await Promise.all([0,1,2,3].filter(j=>s+j<n).map(async j=>{const i=s+j;await F.setDoc(F.doc(fdb,'vchunks',id+'_'+i),{v:id,i,d:await b64(f.slice(i*CH,(i+1)*CH)),h:ME})}));toast(`影片上傳中 ${Math.min(s+4,n)}/${n}`)}
 await F.setDoc(ref,{cat,img:poster,type:'video',n,mime:f.type||'video/mp4',t:Date.now(),h:ME,hidden:false});return true}
@@ -244,6 +253,16 @@ $('#send').onclick=async()=>{const v=$('#txt').value.trim();if(!v)return toast('
 try{await store.add('notes',{text:v,t:Date.now(),h:ME,hidden:false});$('#txt').value='';$('#cn').textContent=0;toast('已貼上留言板')}catch(e){toast('留言失敗，請再試一次')}};
 function renderNotes(){const l=data.notes.filter(n=>!n.hidden||n.h===ME||ADMIN).sort((a,b)=>b.t-a.t);
 $('#wall').innerHTML=l.length?l.map(n=>`<div class="note ${n.hidden?'off':''}"><div class="paper"><p>${esc(n.text)}</p><small>匿名同學・${new Date(n.t).toLocaleDateString('zh-TW')}</small></div>${n.h===ME?`<div class="ncl">${n.hidden?`<button data-act="show" data-c="notes" data-id="${n.id}">重新發佈</button>`:`<button data-act="hide" data-c="notes" data-id="${n.id}">撤回</button>`}<button data-act="del" data-c="notes" data-id="${n.id}">刪除</button></div>`:ADMIN?`<div class="ncl"><button data-act="del" data-c="notes" data-id="${n.id}">刪除</button></div>`:''}</div>`).join(''):'<p class="small" style="grid-column:1/-1;font-size:13px">還沒有留言，寫下第一張吧</p>'}
+/* 管理後台：誰發了什麼 */
+let apf='';
+const AREA={hs:'相冊・高中',jh:'相冊・初中',z1:'專區・黃梓喬牛逼區',z2:'專區・狗俊約棋'};
+const fmt=t=>{const d=new Date(t),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`};
+const code=h=>String(h||'?').slice(0,5).toUpperCase();
+function renderAdmin(){if(!ADMIN||$('#ap').hidden)return;
+const rows=[...data.photos.map(p=>({...p,c:'photos'})),...data.notes.map(n=>({...n,c:'notes'}))].sort((a,b)=>b.t-a.t),sel=apf?rows.filter(r=>code(r.h)===apf):rows;
+$('#apc').textContent=`共 ${rows.length} 筆${apf?`，目前只看裝置 #${apf}（${sel.length} 筆）`:''}`;
+$('#apl').innerHTML=sel.map(r=>`<div class="row">${r.c==='notes'?'<div class="th">留言</div>':`<img class="th" src="${r.img}" alt="">`}<div class="meta">${r.c==='notes'?'留言板・留言':(AREA[r.cat]||esc(r.cat))+'・'+(r.type==='video'?'影片':'照片')}${r.hidden?'（已撤回）':''}<br>${fmt(r.t)}・裝置 <span class="who" data-who="${code(r.h)}">#${code(r.h)}</span>${r.c==='notes'?`<br>「${esc(r.text)}」`:''}</div><button class="chip" data-act="del" data-c="${r.c}" data-id="${r.id}">刪除</button></div>`).join('')||'<p class="small">目前沒有內容</p>'}
+$('#admp').onclick=()=>{$('#ap').hidden=false;renderAdmin()};$('#apx').onclick=()=>$('#ap').hidden=true;$('#apall').onclick=()=>{apf='';renderAdmin()};
 /* admin */
 $('#adm').onclick=async()=>{if(!AU)return toast('還沒連上，請稍等');try{if(ADMIN){await AU.signOut(AUTH);await AU.signInAnonymously(AUTH)}else await AU.signInWithPopup(AUTH,new AU.GoogleAuthProvider());setUser()}catch(e){toast('登入失敗：'+(e.code||e.message))}};
 if(location.hash==='#admin')$('#adm').hidden=false;
